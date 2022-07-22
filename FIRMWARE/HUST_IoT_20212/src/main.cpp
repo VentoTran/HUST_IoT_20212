@@ -12,26 +12,39 @@
 #include "WiFi.h"
 #include "PubSubClient.h"
 
-#define PIR   (14)
+#define DeviceID    (2)
+#define PIR         (14)
+#define DIR_IN      true
+#define DIR_OUT     false
 #define device_state            "mandevices/deviceID_0002/$state"
 #define device_name             "mandevices/deviceID_0002/$name"
 
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
+TaskHandle_t xMQTTTaskHandle;
 
-const char* SSID = "T.1.1";
-const char* PASS = "123123123";
-const char* mqtt_server = "test.mosquitto.org";
+const char* SSID = "Vento";
+const char* PASS = "12345678";
+const char* mqtt_server = "172.20.10.7";
+// const char* mqtt_server = "test.mosquitto.org";
 const int port = 1883;
 
+uint32_t Period = 0;
+uint8_t DeviceState = 0;
+bool Direction = false;
 bool isMotion = false;
+bool isTimerRun = false;
+char payload[50] = {0};
 
 uint32_t timePub = 0;
+uint32_t timeSec = 0;
 
 bool MQTTConnect();
 void callback(char* topic, uint8_t* payload, unsigned int length);
 void WiFiConnect(void);
+
+void MQTT_Task(void* parameter);
 
 
 void setup()
@@ -41,47 +54,101 @@ void setup()
   pinMode(PIR, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
 
-  delay(1000);
-
   mqtt.setServer(mqtt_server, port);
   mqtt.setCallback(callback);
   mqtt.setKeepAlive(120);
 
-  WiFiConnect();
   timePub = millis();
+
+  delay(1000);
+
+  xTaskCreatePinnedToCore(
+                MQTT_Task,
+                "MQTT Task",
+                1024 * 3,
+                NULL,
+                1,
+                &xMQTTTaskHandle,
+                1);
 }
 
 void loop()
 {
-  // if (digitalRead(PIR) == HIGH)
-  // {
-  //   // if (isMotion == false)
-  //   // {
-  //     digitalWrite(LED_BUILTIN, HIGH);
-  //     Serial.println("Motion detected!");
-  //     isMotion = true;
-  //   // }
-  // }
-  // else
-  // {
-  //   // if (isMotion == true)
-  //   // {
-  //     digitalWrite(LED_BUILTIN, LOW);
-  //     Serial.println("Motion ended!");
-  //     isMotion = false;
-  //   // }
-  // }
-  if ((millis() - timePub) >= 15000)
+  if ((digitalRead(PIR) == HIGH) && (isMotion == false))
   {
-    Serial.println("regular message");
-    mqtt.publish("mandevices/running", "1", false);
+    Serial.println("Motion started!");
+    digitalWrite(LED_BUILTIN, HIGH);
+    if (Direction == DIR_OUT)
+    {
+      Serial.println("Im IN :)");
+      Direction = DIR_IN;
+      DeviceState = 1;
+      memset(payload, '\0', sizeof(payload));
+      sprintf(payload, "{\"DeviceID\":%d,\"State\":%d,\"Period\":%i}", DeviceID, DeviceState, Period);
+      Serial.println(payload);
+      mqtt.publish("mandevices/Human_Present", payload, false);
+      Period = 0;
+      timePub = millis();
+    }
+    else
+    {
+      Serial.println("Im OUT :p");
+      Direction = DIR_OUT;
+      DeviceState = 0;
+      memset(payload, '\0', sizeof(payload));
+      sprintf(payload, "{\"DeviceID\":%d,\"State\":%d,\"Period\":%i}", DeviceID, DeviceState, Period);
+      Serial.println(payload);
+      mqtt.publish("mandevices/Human_Present", payload, false);
+      Period = 0;
+      timePub = millis();
+    }
+    isMotion = true;
+  }
+  else if ((digitalRead(PIR) == LOW) && (isMotion == true))
+  {
+    digitalWrite(LED_BUILTIN, LOW);
+    Serial.println("Motion ended!");
+    isMotion = false;
+  }
+  
+  if ((millis() - timePub) >= 90000)
+  {
+    Serial.println("Regular message ping");
+    mqtt.publish("mandevices","");
     timePub = millis();
   }
   
-  if (!mqtt.connected() && (WiFi.status() == WL_CONNECTED))
+  if (((millis() - timeSec) >= 1000) && (Direction == DIR_IN))
   {
-    MQTTConnect();
-    delay(1000);
+    Period++;
+    Serial.println(Period);
+    timeSec = millis();
+  }
+  else if (Direction == DIR_OUT)
+  {
+    timeSec = millis();
+  }
+
+  if (!mqtt.connected() || (WiFi.status() != WL_CONNECTED))
+  {
+    vTaskResume(xMQTTTaskHandle);
+  }
+}
+
+void MQTT_Task(void* parameter)
+{
+  while(1)
+  {
+    if (!mqtt.connected() && (WiFi.status() == WL_CONNECTED))
+    {
+      MQTTConnect();
+    }
+    else if (WiFi.status() != WL_CONNECTED)
+    {
+      WiFiConnect();
+      MQTTConnect();
+    }
+    vTaskSuspend(xMQTTTaskHandle);
   }
 }
 
