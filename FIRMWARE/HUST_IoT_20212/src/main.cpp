@@ -12,12 +12,20 @@
 #include "WiFi.h"
 #include "PubSubClient.h"
 
-#define DeviceID    (2)
-#define PIR         (14)
+#define DeviceID    (1)
+#if DeviceID == 1
+#define PIR           (27)
+#define device_state  "mandevices/deviceID_0001/$state"
+#define device_name   "mandevices/deviceID_0001/$name"
+#else
+#define PIR           (14)
+#define device_state  "mandevices/deviceID_0002/$state"
+#define device_name   "mandevices/deviceID_0002/$name"
+#endif
+
 #define DIR_IN      true
 #define DIR_OUT     false
-#define device_state            "mandevices/deviceID_0002/$state"
-#define device_name             "mandevices/deviceID_0002/$name"
+
 
 
 WiFiClient espClient;
@@ -26,7 +34,7 @@ TaskHandle_t xMQTTTaskHandle;
 
 const char* SSID = "Vento";
 const char* PASS = "12345678";
-const char* mqtt_server = "172.20.10.7";
+const char* mqtt_server = "172.20.10.2";
 // const char* mqtt_server = "test.mosquitto.org";
 const int port = 1883;
 
@@ -70,11 +78,13 @@ void setup()
                 1,
                 &xMQTTTaskHandle,
                 1);
+
+  delay(3000);
 }
 
 void loop()
 {
-  if ((digitalRead(PIR) == HIGH) && (isMotion == false))
+  if ((digitalRead(PIR) == HIGH) && (isMotion == false) && (WiFi.status() == WL_CONNECTED))
   {
     Serial.println("Motion started!");
     digitalWrite(LED_BUILTIN, HIGH);
@@ -83,26 +93,30 @@ void loop()
       Serial.println("Im IN :)");
       Direction = DIR_IN;
       DeviceState = 1;
-      memset(payload, '\0', sizeof(payload));
-      sprintf(payload, "{\"DeviceID\":%d,\"State\":%d,\"Period\":%i}", DeviceID, DeviceState, Period);
-      Serial.println(payload);
-      mqtt.publish("mandevices/Human_Present", payload, false);
-      Period = 0;
-      timePub = millis();
+      if (mqtt.connected() && (WiFi.status() != WL_CONNECTED))
+      {
+        memset(payload, '\0', sizeof(payload));
+        sprintf(payload, "{\"DEVICE_ID\":%d,\"STATE\":%d,\"TIME\":%i}", DeviceID, DeviceState, Period);
+        Serial.println(payload);
+        mqtt.publish("mandevices/Human_Present", payload, false);
+      }
     }
     else
     {
       Serial.println("Im OUT :p");
       Direction = DIR_OUT;
       DeviceState = 0;
-      memset(payload, '\0', sizeof(payload));
-      sprintf(payload, "{\"DeviceID\":%d,\"State\":%d,\"Period\":%i}", DeviceID, DeviceState, Period);
-      Serial.println(payload);
-      mqtt.publish("mandevices/Human_Present", payload, false);
-      Period = 0;
-      timePub = millis();
+      if (mqtt.connected() && (WiFi.status() != WL_CONNECTED))
+      {
+        memset(payload, '\0', sizeof(payload));
+        sprintf(payload, "{\"DEVICE_ID\":%d,\"STATE\":%d,\"TIME\":%i}", DeviceID, DeviceState, Period);
+        Serial.println(payload);
+        mqtt.publish("mandevices/Human_Present", payload, false);
+      }
     }
+    Period = 0;
     isMotion = true;
+    timePub = millis();
   }
   else if ((digitalRead(PIR) == LOW) && (isMotion == true))
   {
@@ -121,7 +135,15 @@ void loop()
   if (((millis() - timeSec) >= 1000) && (Direction == DIR_IN))
   {
     Period++;
-    Serial.println(Period);
+    // Serial.println(Period);
+    if (mqtt.connected() && (WiFi.status() != WL_CONNECTED))
+    {
+      memset(payload, '\0', sizeof(payload));
+      sprintf(payload, "{\"DEVICE_ID\":%d,\"STATE\":%d,\"TIME\":%i}", DeviceID, DeviceState, Period);
+      Serial.println(payload);
+      mqtt.publish("mandevices/Human_Present", payload, false);
+      timePub = millis();
+    }
     timeSec = millis();
   }
   else if (Direction == DIR_OUT)
@@ -202,7 +224,7 @@ bool MQTTConnect()
   Serial.print("Attemp to connect MQTT server...");
   String clientID = "Stroke medical - ";
   clientID += String (random(0xffff), HEX);
-  if (mqtt.connect(clientID.c_str(), "", "", device_state, 1, true, "lost"))
+  if (mqtt.connect(clientID.c_str(), "", "", device_state, 1, false, "lost"))
   {
     Serial.println("Connected");
     mqtt.publish(device_name, "stroke-medical", false);
