@@ -1,0 +1,26 @@
+Báo cáo họp lần 1 IoT
+
+- Xác định rõ đề bài
+- Chốt phương án 2 sản phẩm (2 node)
+- Xử dụng ESP8266 ESP32 (Arduino hoặc IDF)
+- Tìm hiểu cách truy cập mqtt từ framework .net (app PC)
+- Thử nghiệm viết app Android bằng MIT (app điện thoại)
+- Mua cảm biến PIR thử nghiệm (Ven)
+- Mô tả hệ thống bằng sơ đồ khối
+- Thử nghiệm Localhost MQTT (Đạt)
+
+Quy định tên topic và cấu trúc bản tin
+
+"Human_Present"
+{1,1}
+{2,0}
+{1,0}
+
+{<số thứ tự node cảm biến>,<trạng thái khách>}
+trạng thái 1 là khách đến, trạng thái 0 là khách đi
+
+Mô tả hiển thị dữ liệu trên app PC và app điệnt thoại
+
+[15:45:35] - Quầy 1, có người đến
+[15:46:00] - Quầy 1, có người rời đi, thời gian khách hàng dừng lại 25s
+
